@@ -3,9 +3,9 @@
 #   J.A.R.V.I.S.  —  installer for macOS
 #   Just A Rather Very Intelligent System
 # ═══════════════════════════════════════════════════════════════
-set -uo pipefail
+set -o pipefail
 
-BOLD=$'\033[1m'; DIM=$'\033[2m'
+B=$'\033[1m'; BOLD=$'\033[1m'; DIM=$'\033[2m'
 CY=$'\033[96m'; GD=$'\033[93m'; GR=$'\033[92m'; RD=$'\033[91m'; MG=$'\033[95m'; R=$'\033[0m'
 
 WITH_MIC=0
@@ -641,6 +641,10 @@ def main():
         answer = respond(q)
         jarvis_say(answer)
 
+def clear():
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
 if __name__ == "__main__":
     try:
         main()
@@ -687,6 +691,3 @@ echo "     ${GD}export OPENAI_API_KEY=sk-...${R}   ${DIM}(add to ~/.zshrc)${R}"
 echo
 echo "  ${DIM}Uninstall:${R}  ${GD}rm -rf ~/.jarvis${R} ${DIM}and remove the PATH line from ~/.zshrc${R}"
 echo
-</｜｜DSML｜｜ parameter>
-</｜｜DSML｜｜ invoke>
-</｜｜DSML｜｜ calls>
