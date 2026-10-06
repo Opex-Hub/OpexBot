@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════
 #   J.A.R.V.I.S.  —  installer for macOS
-#   Just A Rather Very Intelligent System
 # ═══════════════════════════════════════════════════════════════
 set -o pipefail
 
-B=$'\033[1m'; BOLD=$'\033[1m'; DIM=$'\033[2m'
-CY=$'\033[96m'; GD=$'\033[93m'; GR=$'\033[92m'; RD=$'\033[91m'; MG=$'\033[95m'; R=$'\033[0m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+CYAN=$'\033[96m'
+GOLD=$'\033[93m'
+GREEN=$'\033[92m'
+RED=$'\033[91m'
+MAGENTA=$'\033[95m'
+RESET=$'\033[0m'
 
 WITH_MIC=0
-[[ "${1:-}" == "--mic" ]] && WITH_MIC=1
+[ "${1:-}" = "--mic" ] && WITH_MIC=1
 
 clear
 cat <<EOF
 
-${CY}${B}      ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
+${CYAN}${BOLD}      ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
       ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
       ██║███████║██████╔╝██║   ██║██║███████╗
  ██   ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
  ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
-  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝${R}
-${DIM}           install sequence · v1.0${R}
+  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝${RESET}
+${DIM}           install sequence · v1.0${RESET}
 
 EOF
 sleep 0.6
@@ -32,69 +37,62 @@ step() {
   "$@" >/dev/null 2>&1 &
   local pid=$!
   while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  ${CY}▸${R} %s ${GD}%s${R}   " "$msg" "${spin[$((i%10))]}"
+    printf "\r  ${CYAN}▸${RESET} %s ${GOLD}%s${RESET}   " "$msg" "${spin[$((i%10))]}"
     i=$((i+1)); sleep 0.07
   done
   if wait "$pid"; then
-    printf "\r  ${GR}✓${R} %s      \n" "$msg"
+    printf "\r  ${GREEN}✓${RESET} %s      \n" "$msg"
   else
-    printf "\r  ${RD}✗${R} %s      \n" "$msg"
-    return 1
+    printf "\r  ${RED}✗${RESET} %s      \n" "$msg"
   fi
 }
 
-# ── sanity ────────────────────────────────────────────────────
-if [[ "$(uname)" != "Darwin" ]]; then
-  echo "  ${RD}✗${R} This build targets macOS only."
+if [ "$(uname)" != "Darwin" ]; then
+  echo "  ${RED}✗${RESET} This installer targets macOS only."
   exit 1
 fi
 
 JARVIS_HOME="$HOME/.jarvis"
 mkdir -p "$JARVIS_HOME/bin"
 
-PY="$(command -v python3 || true)"
-if [[ -z "$PY" ]]; then
-  echo "  ${RD}✗${R} python3 not found. Install Xcode Command Line Tools:"
-  echo "      xcode-select --install"
+PYBIN="$(command -v python3 || true)"
+if [ -z "$PYBIN" ]; then
+  echo "  ${RED}✗${RESET} python3 not found."
+  echo "      Install with: xcode-select --install"
   exit 1
 fi
 
 step "Creating neural core directory" mkdir -p "$JARVIS_HOME"
 
-# venv
-if [[ ! -x "$JARVIS_HOME/venv/bin/python3" ]]; then
-  "$PY" -m venv "$JARVIS_HOME/venv" >/dev/null 2>&1
+if [ ! -x "$JARVIS_HOME/venv/bin/python3" ]; then
+  "$PYBIN" -m venv "$JARVIS_HOME/venv" >/dev/null 2>&1
 fi
-if [[ -x "$JARVIS_HOME/venv/bin/python3" ]]; then
+
+if [ -x "$JARVIS_HOME/venv/bin/python3" ]; then
   VPY="$JARVIS_HOME/venv/bin/python3"
 else
-  VPY="$PY"
+  VPY="$PYBIN"
 fi
 
 step "Calibrating Python runtime" "$VPY" -m pip install --quiet --upgrade pip
 
-if [[ $WITH_MIC -eq 1 ]]; then
+if [ "$WITH_MIC" -eq 1 ]; then
   if command -v brew >/dev/null 2>&1; then
-    step "Installing audio drivers (portaudio)" brew install portaudio || true
-    step "Installing speech recognition" "$VPY" -m pip install --quiet SpeechRecognition pyaudio || true
+    step "Installing audio drivers" brew install portaudio
+    step "Installing speech recognition" "$VPY" -m pip install --quiet SpeechRecognition pyaudio
   else
-    printf "  ${GD}!${R} Homebrew missing — skipping microphone support.\n"
+    printf "  ${GOLD}!${RESET} Homebrew missing — skipping microphone support.\n"
   fi
 fi
 
-# ── write the brain ───────────────────────────────────────────
 cat > "$JARVIS_HOME/jarvis.py" <<'PYEOF'
 #!/usr/bin/env python3
-"""
-J.A.R.V.I.S. — Just A Rather Very Intelligent System
-Terminal assistant for macOS. Voice out via `say`, optional voice in via mic.
-"""
+"""J.A.R.V.I.S. — Just A Rather Very Intelligent System"""
 
 import os, sys, re, json, math, random, shutil, subprocess, threading
 import time, ast, operator, datetime, textwrap
 import urllib.parse, urllib.request
 
-# ───────────────────────── palette ─────────────────────────
 R    = "\033[0m"
 B    = "\033[1m"
 DIM  = "\033[2m"
@@ -104,11 +102,14 @@ RD   = "\033[91m"
 GR   = "\033[92m"
 MG   = "\033[95m"
 
-HOME      = os.path.expanduser("~")
-BASE      = os.path.join(HOME, ".jarvis")
+HOME_DIR  = os.path.expanduser("~")
+BASE      = os.path.join(HOME_DIR, ".jarvis")
 CONF_PATH = os.path.join(BASE, "config.json")
 
-# ───────────────────────── config ──────────────────────────
+def clear():
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
 def conf_load():
     try:
         with open(CONF_PATH) as f:
@@ -129,7 +130,6 @@ MUTED = CONF.get("muted", False)
 RATE  = CONF.get("rate", 185)
 VOICE = CONF.get("voice", None)
 
-# ───────────────────────── voice out ───────────────────────
 PREFERRED_VOICES = ["Daniel", "Oliver", "Arthur", "Rishi", "Serena", "Kate"]
 
 def detect_voice():
@@ -166,7 +166,6 @@ def speak(text, block=True):
                                           stderr=subprocess.DEVNULL),
             daemon=True).start()
 
-# ───────────────────────── voice in ────────────────────────
 def listen():
     try:
         import speech_recognition as sr
@@ -189,7 +188,6 @@ def listen():
         sys.stdout.write("\r" + " " * 24 + "\r")
         return None
 
-# ───────────────────────── reactor animation ───────────────
 def reactor_frame(step, size=15):
     c = (size - 1) / 2.0
     grid = [[" "] * size for _ in range(size)]
@@ -238,7 +236,7 @@ def boot_animation():
     pad = " " * 14
     for i in range(38):
         body = "\n".join(pad + l for l in reactor_frame(i))
-        sys.stdout.write("\033[H" + f"{CY}{B}" + body + f"{R}" + "\033[J")
+        sys.stdout.write("\033[H" + CY + B + body + R + "\033[J")
         sys.stdout.flush()
         time.sleep(0.032)
     sys.stdout.write("\033[?25h")
@@ -261,7 +259,6 @@ def boot_log():
         time.sleep(0.04)
     print()
 
-# ───────────────────────── safe math ───────────────────────
 _OPS = {
     ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
     ast.Div: operator.truediv, ast.Pow: operator.pow, ast.Mod: operator.mod,
@@ -279,8 +276,7 @@ def safe_eval(node):
         return _OPS[type(node.op)](safe_eval(node.operand))
     raise ValueError("unsupported")
 
-# ───────────────────────── web helpers ─────────────────────
-UA = {"User-Agent": "JARVIS/1.0 (macOS terminal assistant)"}
+UA = {"User-Agent": "JARVIS/1.0 (macOS)"}
 
 def get_weather(city=""):
     try:
@@ -315,7 +311,7 @@ def wiki_answer(query):
         short = " ".join(sentences[:2]).strip()
         if len(short) > 420:
             short = short[:417].rsplit(" ", 1)[0] + "…"
-        return f"{short}"
+        return short
     except Exception:
         return None
 
@@ -345,13 +341,12 @@ def ask_llm(q):
             "https://api.openai.com/v1/chat/completions",
             data=body,
             headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {key}"})
+                     "Authorization": "Bearer " + key})
         d = json.load(urllib.request.urlopen(req, timeout=30))
         return d["choices"][0]["message"]["content"].strip()
     except Exception:
         return None
 
-# ───────────────────────── personality ─────────────────────
 JOKES = [
     "Why did the neural network cross the road, sir? Because its gradient pointed that way.",
     "I'd tell you a UDP joke, sir, but you might not get it.",
@@ -362,15 +357,9 @@ JOKES = [
 ]
 
 FALLBACKS = [
-    "I'm afraid I don't have that in my databanks, sir. Perhaps try rephrasing — or asking something I actually know.",
+    "I'm afraid I don't have that in my databanks, sir. Perhaps try rephrasing.",
     "That one's beyond me, sir. I've logged it for future upgrades.",
     "I could hazard a guess, sir, but I'd rather not embarrass us both.",
-]
-
-SASS = [
-    "As you wish, sir. Reluctantly.",
-    "Certainly, sir. I've alerted the fire brigade preemptively.",
-    "Right away, sir. Do try not to break anything expensive.",
 ]
 
 def now_str():
@@ -378,7 +367,6 @@ def now_str():
 
 def local_brain(q):
     s = q.lower().strip()
-
     if not s:
         return "I'm listening, sir."
 
@@ -452,10 +440,8 @@ def local_brain(q):
         w = get_weather(city)
         if w:
             return f"{w}, sir."
-        return ("I can't reach the weather service, sir. "
-                "Might I suggest looking out a window?")
+        return "I can't reach the weather service, sir. Might I suggest looking out a window?"
 
-    # arithmetic
     expr_src = s
     for a, b in [(" plus ", " + "), (" minus ", " - "), (" times ", " * "),
                  (" multiplied by ", " * "), (" divided by ", " / "),
@@ -471,7 +457,6 @@ def local_brain(q):
         except Exception:
             pass
 
-    # open an app
     m = re.match(r"(?:open|launch|start)\s+(.+)", s)
     if m:
         app = m.group(1).strip()
@@ -482,10 +467,8 @@ def local_brain(q):
                 return f"Opening {candidate}, sir."
             except Exception:
                 continue
-        return (f"I couldn't find an application called {app}, sir. "
-                "Perhaps it doesn't exist — much like your filing system.")
+        return f"I couldn't find an application called {app}, sir."
 
-    # web search
     m = re.match(r"(?:search(?: for)?|google|look up)\s+(.+)", s)
     if m:
         term = m.group(1).strip()
@@ -507,7 +490,6 @@ def respond(q):
         return a
     return random.choice(FALLBACKS)
 
-# ───────────────────────── output ──────────────────────────
 def jarvis_say(text):
     width = shutil.get_terminal_size((80, 24)).columns
     wrapped = textwrap.fill(text, width=max(40, width - 12),
@@ -531,7 +513,6 @@ def think(dur=0.55):
     sys.stdout.write("\r" + " " * 24 + "\r")
     sys.stdout.flush()
 
-# ───────────────────────── main loop ───────────────────────
 def main():
     global MUTED, VOICE, RATE
 
@@ -641,10 +622,6 @@ def main():
         answer = respond(q)
         jarvis_say(answer)
 
-def clear():
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.flush()
-
 if __name__ == "__main__":
     try:
         main()
@@ -655,17 +632,15 @@ PYEOF
 
 chmod +x "$JARVIS_HOME/jarvis.py"
 
-# ── launcher ─────────────────────────────────────────────────
 cat > "$JARVIS_HOME/bin/jarvis" <<LAUNCH
 #!/bin/bash
 exec "$VPY" "$JARVIS_HOME/jarvis.py" "\$@"
 LAUNCH
 chmod +x "$JARVIS_HOME/bin/jarvis"
 
-# ── PATH ─────────────────────────────────────────────────────
 add_path() {
   local rc="$1"
-  [[ -f "$rc" ]] || touch "$rc"
+  [ -f "$rc" ] || touch "$rc"
   if ! grep -qF '.jarvis/bin' "$rc" 2>/dev/null; then
     printf '\n# J.A.R.V.I.S.\nexport PATH="$HOME/.jarvis/bin:$PATH"\n' >> "$rc"
   fi
@@ -677,17 +652,17 @@ export PATH="$HOME/.jarvis/bin:$PATH"
 step "Linking command into shell" true
 
 echo
-echo "  ${GR}${B}✓ J.A.R.V.I.S. installed.${R}"
+echo "  ${GREEN}${BOLD}✓ J.A.R.V.I.S. installed.${RESET}"
 echo
-echo "  ${DIM}Reload your shell, then run:${R}"
-echo "     ${CY}${B}source ~/.zshrc && jarvis${R}"
+echo "  ${DIM}Reload your shell, then run:${RESET}"
+echo "     ${CYAN}${BOLD}source ~/.zshrc && jarvis${RESET}"
 echo
-echo "  ${DIM}Options:${R}"
-echo "     ${GD}jarvis${R}              ${DIM}text in, voice out${R}"
-echo "     ${GD}jarvis --voice${R}      ${DIM}microphone input (needs --mic install)${R}"
+echo "  ${DIM}Options:${RESET}"
+echo "     ${GOLD}jarvis${RESET}              ${DIM}text in, voice out${RESET}"
+echo "     ${GOLD}jarvis --voice${RESET}      ${DIM}microphone input (needs --mic install)${RESET}"
 echo
-echo "  ${DIM}Optional — smarter answers:${R}"
-echo "     ${GD}export OPENAI_API_KEY=sk-...${R}   ${DIM}(add to ~/.zshrc)${R}"
+echo "  ${DIM}Optional — smarter answers:${RESET}"
+echo "     ${GOLD}export OPENAI_API_KEY=sk-...${RESET}   ${DIM}(add to ~/.zshrc)${RESET}"
 echo
-echo "  ${DIM}Uninstall:${R}  ${GD}rm -rf ~/.jarvis${R} ${DIM}and remove the PATH line from ~/.zshrc${R}"
+echo "  ${DIM}Uninstall:${RESET}  ${GOLD}rm -rf ~/.jarvis${RESET} ${DIM}and remove the PATH line from ~/.zshrc${RESET}"
 echo
