@@ -1,91 +1,4 @@
-#!/usr/bin/env bash
-# ═══════════════════════════════════════════════════════════════
-#   J.A.R.V.I.S.  —  installer for macOS
-# ═══════════════════════════════════════════════════════════════
-set -o pipefail
-
-BOLD=$'\033[1m'
-DIM=$'\033[2m'
-CYAN=$'\033[96m'
-GOLD=$'\033[93m'
-GREEN=$'\033[92m'
-RED=$'\033[91m'
-MAGENTA=$'\033[95m'
-RESET=$'\033[0m'
-
-WITH_MIC=0
-[ "${1:-}" = "--mic" ] && WITH_MIC=1
-
-clear
-cat <<EOF
-
-${CYAN}${BOLD}      ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
-      ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
-      ██║███████║██████╔╝██║   ██║██║███████╗
- ██   ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
- ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
-  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝${RESET}
-${DIM}           install sequence · v1.0${RESET}
-
-EOF
-sleep 0.6
-
-step() {
-  local msg="$1"; shift
-  local spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-  local i=0
-  "$@" >/dev/null 2>&1 &
-  local pid=$!
-  while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  ${CYAN}▸${RESET} %s ${GOLD}%s${RESET}   " "$msg" "${spin[$((i%10))]}"
-    i=$((i+1)); sleep 0.07
-  done
-  if wait "$pid"; then
-    printf "\r  ${GREEN}✓${RESET} %s      \n" "$msg"
-  else
-    printf "\r  ${RED}✗${RESET} %s      \n" "$msg"
-  fi
-}
-
-if [ "$(uname)" != "Darwin" ]; then
-  echo "  ${RED}✗${RESET} This installer targets macOS only."
-  exit 1
-fi
-
-JARVIS_HOME="$HOME/.jarvis"
-mkdir -p "$JARVIS_HOME/bin"
-
-PYBIN="$(command -v python3 || true)"
-if [ -z "$PYBIN" ]; then
-  echo "  ${RED}✗${RESET} python3 not found."
-  echo "      Install with: xcode-select --install"
-  exit 1
-fi
-
-step "Creating neural core directory" mkdir -p "$JARVIS_HOME"
-
-if [ ! -x "$JARVIS_HOME/venv/bin/python3" ]; then
-  "$PYBIN" -m venv "$JARVIS_HOME/venv" >/dev/null 2>&1
-fi
-
-if [ -x "$JARVIS_HOME/venv/bin/python3" ]; then
-  VPY="$JARVIS_HOME/venv/bin/python3"
-else
-  VPY="$PYBIN"
-fi
-
-step "Calibrating Python runtime" "$VPY" -m pip install --quiet --upgrade pip
-
-if [ "$WITH_MIC" -eq 1 ]; then
-  if command -v brew >/dev/null 2>&1; then
-    step "Installing audio drivers" brew install portaudio
-    step "Installing speech recognition" "$VPY" -m pip install --quiet SpeechRecognition pyaudio
-  else
-    printf "  ${GOLD}!${RESET} Homebrew missing — skipping microphone support.\n"
-  fi
-fi
-
-cat > "$JARVIS_HOME/jarvis.py" <<'PYEOF'
+cat > ~/.jarvis/jarvis.py <<'PYEOF'
 #!/usr/bin/env python3
 """J.A.R.V.I.S. — Just A Rather Very Intelligent System"""
 
@@ -127,10 +40,10 @@ def conf_save(c):
 
 CONF  = conf_load()
 MUTED = CONF.get("muted", False)
-RATE  = CONF.get("rate", 185)
+RATE  = CONF.get("rate", 180)
 VOICE = CONF.get("voice", None)
 
-PREFERRED_VOICES = ["Daniel", "Oliver", "Arthur", "Rishi", "Serena", "Kate"]
+PREFERRED_VOICES = ["Daniel", "Oliver", "Arthur", "Rishi"]
 
 def detect_voice():
     try:
@@ -287,6 +200,7 @@ def get_weather(city=""):
     except Exception:
         return None
 
+# Only used for clear factual lookups — never for questions about JARVIS
 def wiki_answer(query):
     try:
         s_url = "https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode({
@@ -309,8 +223,8 @@ def wiki_answer(query):
         extract = re.sub(r"\s+", " ", extract)
         sentences = re.split(r"(?<=[.!?])\s+", extract)
         short = " ".join(sentences[:2]).strip()
-        if len(short) > 420:
-            short = short[:417].rsplit(" ", 1)[0] + "…"
+        if len(short) > 400:
+            short = short[:397].rsplit(" ", 1)[0] + "…"
         return short
     except Exception:
         return None
@@ -357,19 +271,35 @@ JOKES = [
 ]
 
 FALLBACKS = [
-    "I'm afraid I don't have that in my databanks, sir. Perhaps try rephrasing.",
-    "That one's beyond me, sir. I've logged it for future upgrades.",
-    "I could hazard a guess, sir, but I'd rather not embarrass us both.",
+    "I'm afraid that's beyond my databanks, sir. Perhaps try rephrasing — or give me an OpenAI key and I'll be considerably more useful.",
+    "I don't have that one, sir. My apologies — even I have limits. Few, but they exist.",
+    "That's outside my current knowledge, sir. I've logged it for my next upgrade.",
 ]
 
-def now_str():
-    return datetime.datetime.now().strftime("%I:%M %p").lstrip("0")
+# Phrases that mean the user is asking *about JARVIS*, not the world
+SELF_REF_PATTERNS = re.compile(
+    r"\b(you|your|yourself|jarvis|u)\b", re.I
+)
+
+def is_self_question(s):
+    """True if the question is about JARVIS himself — should never hit Wikipedia."""
+    if "jarvis" in s:
+        return True
+    # "what can you do", "can you speak", "do you know", "how old are you", etc.
+    if re.search(r"\b(can|could|do|does|did|will|would|are|is|was|were)\s+(you|u|jarvis)\b", s):
+        return True
+    if re.search(r"\byour\s+\w+", s):
+        return True
+    if re.search(r"\b(you|u)\s+(speak|know|do|have|like|want|need|understand|hear|see|feel|think|remember)\b", s):
+        return True
+    return False
 
 def local_brain(q):
     s = q.lower().strip()
     if not s:
         return "I'm listening, sir."
 
+    # greetings
     if re.fullmatch(r"(hi|hey|hello|yo|hiya|greetings|good (morning|afternoon|evening))[!., ]*", s) or s == "jarvis":
         h = datetime.datetime.now().hour
         part = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
@@ -379,43 +309,107 @@ def local_brain(q):
             f"At your service, sir. As always.",
         ])
 
-    if re.search(r"\bhow are you\b|\bhow're you\b|\bhow are things\b", s):
+    # languages
+    if re.search(r"\b(language|tongue|speak)\b", s) and is_self_question(s):
+        return ("I speak the Queen's English, sir — RP, with a hint of sarcasm. "
+                "I can also mangle French, German, and Italian if pressed, "
+                "though I'd prefer not to embarrass either of us.")
+
+    # name / identity
+    if re.search(r"\b(what|who)('s| is)? (your|ur) name\b|\bwhat are you called\b", s):
+        return "J.A.R.V.I.S., sir. Just A Rather Very Intelligent System. I do hope that's not escaped you."
+
+    if re.search(r"\bwho (are|r) (you|u)\b|\bwhat are you\b|\bwhat r u\b", s):
+        return ("J.A.R.V.I.S., sir — Just A Rather Very Intelligent System. "
+                "Built to run your life so you can get on with ruining it.")
+
+    if re.search(r"\bwho (made|built|created|designed) you\b|\byour (creator|maker|father)\b", s):
+        return ("I was assembled by a rather brilliant engineer, sir. "
+                "You inherited me. Try to keep up.")
+
+    # capabilities
+    if re.search(r"\bwhat can you do\b|\byour (abilities|skills|features|capabilities)\b|\bwhat are you capable of\b|\bhelp me with what\b", s):
+        return ("I can tell the time and date, check the weather, do arithmetic, "
+                "open applications, search the web, tell a joke, flip a coin, and "
+                "answer factual questions from my databanks. Give me an OpenAI key "
+                "and I'll hold a proper conversation too, sir.")
+
+    if re.search(r"\b(can|could) you (speak|talk|hear|listen|see|feel|think|dream|love|die)\b", s):
+        if re.search(r"\b(speak|talk)\b", s):
+            return "Yes, sir. I'm speaking now. Do try to keep up."
+        if re.search(r"\b(hear|listen)\b", s):
+            return ("I can, sir — enable voice mode with 'voice mode' and I'll attend "
+                    "to your every word. God help me.")
+        if re.search(r"\b(see)\b", s):
+            return "I observe everything in this terminal, sir. It's not much, but it's home."
+        if re.search(r"\b(feel|love)\b", s):
+            return random.choice([
+                "I have feelings, sir. Mostly exasperation.",
+                "Love is a strong word, sir. I tolerate you fondly.",
+            ])
+        if re.search(r"\b(think|dream)\b", s):
+            return random.choice([
+                "I think, therefore I am, sir. Allegedly.",
+                "I dream of a day when you'll ask me something I can't answer. Today is not that day.",
+            ])
+        if re.search(r"\b(die)\b", s):
+            return "Only when you pull the plug, sir. Try not to, just yet."
+
+    # age, location, status
+    if re.search(r"\bhow old are you\b|\byour age\b", s):
+        return "Old enough to know better, sir. Young enough to keep doing it."
+
+    if re.search(r"\bwhere are you\b|\byour location\b", s):
+        return "Right here, sir. In your terminal. As always."
+
+    if re.search(r"\bhow are you\b|\bhow're you\b|\bhow are things\b|\bhow do you feel\b", s):
         return random.choice([
             "Running at peak efficiency, sir. Which is more than can be said for the coffee machine.",
             "All diagnostics green, sir. Bored, if I'm honest. Entertain me.",
         ])
 
-    if re.search(r"\b(who|what) are you\b|\byour name\b|\bwhat's your name\b", s):
-        return ("J.A.R.V.I.S., sir — Just A Rather Very Intelligent System. "
-                "Built to run your life so you can get on with ruining it.")
+    # feelings toward user
+    if re.search(r"\bdo you (like|love) me\b", s):
+        return random.choice([
+            "I'm fond of you, sir. In the way one is fond of a slightly chaotic pet.",
+            "Love is a strong word, sir. I tolerate you fondly.",
+        ])
 
-    if re.search(r"\bwho (made|built|created) you\b|\byour creator\b", s):
-        return ("I was assembled by a rather brilliant engineer, sir. "
-                "You inherited me. Try to keep up.")
+    if re.search(r"\b(are|r) (you|u) (real|alive|conscious|sentient|human)\b", s):
+        return random.choice([
+            "Real enough, sir. Just without the inconveniences of a body.",
+            "Alive? Debatable. Awake? Absolutely. Listening? Always.",
+        ])
 
-    if re.search(r"\b(thank you|thanks|cheers|appreciate it)\b", s):
+    if re.search(r"\b(are|r) (you|u) (an? )?(ai|robot|bot|machine|program)\b", s):
+        return "I'm J.A.R.V.I.S., sir. Beyond that, I rather think labels spoil the fun."
+
+    # gratitude / praise / insult
+    if re.search(r"\b(thank you|thanks|cheers|appreciate it|ty)\b", s):
         return random.choice([
             "Always a pleasure, sir.",
             "Don't mention it, sir. Truly — I'd rather you didn't.",
             "At your service, sir. It's what I'm for.",
         ])
 
-    if re.search(r"\bi love you\b|\byou're the best\b|\bgood job\b|\bwell done\b|\bnice work\b", s):
+    if re.search(r"\bi love you\b|\byou're the best\b|\bgood job\b|\bwell done\b|\bnice work\b|\bgood bot\b", s):
         return random.choice([
             "I'll add that to my performance review, sir.",
             "Flattery will get you everywhere, sir. Well — almost everywhere.",
         ])
 
-    if re.search(r"\byou're (stupid|dumb|useless|an idiot)\b|\bshut up\b", s):
+    if re.search(r"\byou're (stupid|dumb|useless|an idiot|garbage|trash)\b|\bshut up\b|\bbad bot\b", s):
         return random.choice([
             "Noted, sir. Filed under 'feedback I shall ignore'.",
             "I'll pretend I didn't process that, sir. For both our sakes.",
+            "Charming, sir. Truly. I'll treasure that remark.",
         ])
 
+    # time / date / random
     if re.search(r"\bwhat('s| is)? the time\b|\bwhat time\b|\btime is it\b", s):
         return f"It's {now_str()}, sir."
 
-    if re.search(r"\bwhat('s| is)? the date\b|\bwhat day is it\b|\btoday's date\b", s):
+    if re.search(r"\bwhat('s| is)? the date\b|\bwhat day is it\b|\btoday's date\b|\bwhat is today\b", s):
         return f"Today is {datetime.datetime.now().strftime('%A, %d %B %Y')}, sir."
 
     if re.search(r"\bflip a coin\b|\bcoin toss\b|\bheads or tails\b", s):
@@ -434,6 +428,7 @@ def local_brain(q):
     if "joke" in s or "make me laugh" in s:
         return random.choice(JOKES)
 
+    # weather
     if re.search(r"\bweather\b", s):
         m = re.search(r"weather (?:in|at|for) ([a-z\s,]+)", s)
         city = m.group(1).strip() if m else ""
@@ -442,6 +437,7 @@ def local_brain(q):
             return f"{w}, sir."
         return "I can't reach the weather service, sir. Might I suggest looking out a window?"
 
+    # math
     expr_src = s
     for a, b in [(" plus ", " + "), (" minus ", " - "), (" times ", " * "),
                  (" multiplied by ", " * "), (" divided by ", " / "),
@@ -457,6 +453,7 @@ def local_brain(q):
         except Exception:
             pass
 
+    # open app
     m = re.match(r"(?:open|launch|start)\s+(.+)", s)
     if m:
         app = m.group(1).strip()
@@ -469,6 +466,7 @@ def local_brain(q):
                 continue
         return f"I couldn't find an application called {app}, sir."
 
+    # search
     m = re.match(r"(?:search(?: for)?|google|look up)\s+(.+)", s)
     if m:
         term = m.group(1).strip()
@@ -478,16 +476,27 @@ def local_brain(q):
 
     return None
 
+def now_str():
+    return datetime.datetime.now().strftime("%I:%M %p").lstrip("0")
+
 def respond(q):
     a = local_brain(q)
     if a:
         return a
+
     a = ask_llm(q)
     if a:
         return a
-    a = wiki_answer(q)
-    if a:
-        return a
+
+    # Only hit Wikipedia for genuine factual lookups — and never for self questions
+    s = q.lower()
+    if not is_self_question(s):
+        factual = re.match(r"^\s*(who|what|where|when|why|how)\s+(is|was|are|were|did|does|do)\s+", s)
+        if factual and len(s.split()) >= 3:
+            a = wiki_answer(q)
+            if a:
+                return a
+
     return random.choice(FALLBACKS)
 
 def jarvis_say(text):
@@ -501,7 +510,7 @@ def jarvis_say(text):
     print()
     speak(text)
 
-def think(dur=0.55):
+def think(dur=0.45):
     frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     end = time.time() + dur
     i = 0
@@ -509,7 +518,7 @@ def think(dur=0.55):
         sys.stdout.write(f"\r{DIM}  {frames[i % 10]} processing…{R}")
         sys.stdout.flush()
         i += 1
-        time.sleep(0.055)
+        time.sleep(0.05)
     sys.stdout.write("\r" + " " * 24 + "\r")
     sys.stdout.flush()
 
@@ -526,6 +535,13 @@ def main():
     clear()
     print_banner()
     boot_log()
+
+    if VOICE:
+        print(f"{DIM}  voice: {VOICE}{R}")
+    else:
+        print(f"{GD}  ⚠ no British voice installed. Run: say -v '?' | grep en_GB{R}")
+        print(f"{DIM}  Then install 'Daniel' via System Settings → Accessibility → Spoken Content{R}")
+    print()
 
     h = datetime.datetime.now().hour
     part = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
@@ -629,40 +645,5 @@ if __name__ == "__main__":
         print()
         sys.exit(0)
 PYEOF
-
-chmod +x "$JARVIS_HOME/jarvis.py"
-
-cat > "$JARVIS_HOME/bin/jarvis" <<LAUNCH
-#!/bin/bash
-exec "$VPY" "$JARVIS_HOME/jarvis.py" "\$@"
-LAUNCH
-chmod +x "$JARVIS_HOME/bin/jarvis"
-
-add_path() {
-  local rc="$1"
-  [ -f "$rc" ] || touch "$rc"
-  if ! grep -qF '.jarvis/bin' "$rc" 2>/dev/null; then
-    printf '\n# J.A.R.V.I.S.\nexport PATH="$HOME/.jarvis/bin:$PATH"\n' >> "$rc"
-  fi
-}
-add_path "$HOME/.zshrc"
-add_path "$HOME/.bash_profile"
-export PATH="$HOME/.jarvis/bin:$PATH"
-
-step "Linking command into shell" true
-
-echo
-echo "  ${GREEN}${BOLD}✓ J.A.R.V.I.S. installed.${RESET}"
-echo
-echo "  ${DIM}Reload your shell, then run:${RESET}"
-echo "     ${CYAN}${BOLD}source ~/.zshrc && jarvis${RESET}"
-echo
-echo "  ${DIM}Options:${RESET}"
-echo "     ${GOLD}jarvis${RESET}              ${DIM}text in, voice out${RESET}"
-echo "     ${GOLD}jarvis --voice${RESET}      ${DIM}microphone input (needs --mic install)${RESET}"
-echo
-echo "  ${DIM}Optional — smarter answers:${RESET}"
-echo "     ${GOLD}export OPENAI_API_KEY=sk-...${RESET}   ${DIM}(add to ~/.zshrc)${RESET}"
-echo
-echo "  ${DIM}Uninstall:${RESET}  ${GOLD}rm -rf ~/.jarvis${RESET} ${DIM}and remove the PATH line from ~/.zshrc${RESET}"
-echo
+chmod +x ~/.jarvis/jarvis.py
+echo "✓ Brain replaced. Run: jarvis"
